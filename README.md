@@ -11,6 +11,7 @@ mkdir ~/llvm-project/build
 ```
 5. run
 ```
-cmake -G Ninja ../llvm -DLLVM_ENABLE_PROJECTS="clang;clang-tools-extra" -DCMAKE_BUILD_TYPE=Release`
+cd ~/llvm-project/build
+cmake -G Ninja ../llvm -DLLVM_ENABLE_PROJECTS="clang;clang-tools-extra" -DCMAKE_BUILD_TYPE=Release
 ninja clang-tidy
 ```
