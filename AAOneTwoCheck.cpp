@@ -14,19 +14,28 @@ using namespace clang::ast_matchers;
 namespace clang::tidy::hsc {
 
 void AAOneTwoCheck::registerMatchers(MatchFinder *Finder) {
-  // FIXME: Add matchers.
-  Finder->addMatcher(functionDecl().bind("x"), this);
+  Finder->addMatcher(
+          callExpr(
+              callee(functionDecl(unless(returns(voidType())))), 
+              hasParent(compoundStmt()), 
+              unless(hasParent(explicitCastExpr(hasDestinationType(voidType())))), 
+              unless(cxxOperatorCallExpr())
+          ).bind("unused-return"),
+          this
+  );
 }
 
 void AAOneTwoCheck::check(const MatchFinder::MatchResult &Result) {
-  // FIXME: Add callback implementation.
-  const auto *MatchedDecl = Result.Nodes.getNodeAs<FunctionDecl>("x");
-  if (!MatchedDecl->getIdentifier() || MatchedDecl->getName().starts_with("awesome_"))
-    return;
-  diag(MatchedDecl->getLocation(), "function %0 is insufficiently awesome")
-      << MatchedDecl
-      << FixItHint::CreateInsertion(MatchedDecl->getLocation(), "awesome_");
-  diag(MatchedDecl->getLocation(), "insert 'awesome'", DiagnosticIDs::Note);
+  const auto *MatchedCall = Result.Nodes.getNodeAs<CallExpr>("unused-return");
+  
+  if (!MatchedCall)
+      return;
+
+  auto Diag = diag(MatchedCall->getBeginLoc(), 
+          "[HSCAA.1.2] The value returned by this function is ignored; "
+          "use the value or cast to 'void' to clarify intent");
+
+  Diag << FixItHint::CreateInsertion(MatchedCall->getBeginLoc(), "(void)");
 }
 
 } // namespace clang::tidy::hsc
