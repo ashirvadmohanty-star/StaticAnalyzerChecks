@@ -32,8 +32,7 @@
 #include "AVSixThreeCheck.h"
 #include "AVSixTwoCheck.h"
 #include "BCSixThreeCheck.h"
-[span_0](start_span)#include "UnusedReturnCheck.h" // Rule HSCAA.1.2[span_0](end_span)
-[span_1](start_span)#include "UnusedVariableCheck.h" // Rule HSCAA.2.1[span_1](end_span)
+
 namespace clang::tidy {
 namespace hsc {
 class HSCModule : public ClangTidyModule {
@@ -102,10 +101,6 @@ public:
         "hsc-a-v-six-two");
     CheckFactories.registerCheck<BCSixThreeCheck>(
         "hsc-b-c-six-three");
-   CheckFactories.registerCheck<UnusedReturnCheck>(
-       "hsc-unused-return-value");
-   CheckFactories.registerCheck<UnusedVariableCheck>(
-       "hsc-unused-variable");
  }
 };
 // Register the module with the Clang-Tidy engine
