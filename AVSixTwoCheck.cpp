@@ -14,19 +14,56 @@ using namespace clang::ast_matchers;
 namespace clang::tidy::hsc {
 
 void AVSixTwoCheck::registerMatchers(MatchFinder *Finder) {
-  // FIXME: Add matchers.
-  Finder->addMatcher(functionDecl().bind("x"), this);
+  Finder->addMatcher(cxxNewExpr().bind("new"), this);
+  Finder->addMatcher(cxxDeleteExpr().bind("delete"), this);
+  Finder->addMatcher(
+          callExpr(callee(functionDecl(hasAnyName("::malloc", "::calloc", "::realloc", "::aligned_alloc", "::free"))))
+            .bind("c-alloc"),
+          this);
+  Finder->addMatcher(
+          cxxMemberCallExpr(
+              callee(
+                  cxxMethodDecl(
+                      hasAnyName("allocate", "deallocate"), 
+                      ofClass(hasDeclContext(namespaceDecl(hasName("std"))))
+                  )
+              )
+          ).bind("std-alloc"),
+          this);
+  Finder->addMatcher(
+          cxxMemberCallExpr(callee(cxxMethodDecl(hasName("release"),
+                      ofClass(hasName("::std::unique_ptr")))))
+            .bind("unique-release"),
+          this);
 }
 
 void AVSixTwoCheck::check(const MatchFinder::MatchResult &Result) {
-  // FIXME: Add callback implementation.
-  const auto *MatchedDecl = Result.Nodes.getNodeAs<FunctionDecl>("x");
-  if (!MatchedDecl->getIdentifier() || MatchedDecl->getName().starts_with("awesome_"))
+  if (const auto *New = Result.Nodes.getNodeAs<CXXNewExpr>("new")) {
+    if (New->getNumPlacementArgs() == 0) {
+        diag(New->getBeginLoc(), "Any non-placement form of new shall not be used");
+    }
     return;
-  diag(MatchedDecl->getLocation(), "function %0 is insufficiently awesome")
-      << MatchedDecl
-      << FixItHint::CreateInsertion(MatchedDecl->getLocation(), "awesome_");
-  diag(MatchedDecl->getLocation(), "insert 'awesome'", DiagnosticIDs::Note);
+  }
+
+  if (const auto *Delete = Result.Nodes.getNodeAs<CXXDeleteExpr>("delete")) {
+    diag(Delete->getBeginLoc(), "Any non-placement form of delete shall not be used");
+    return;
+  }
+
+  if (const auto *CAlloc = Result.Nodes.getNodeAs<CallExpr>("c-alloc")) {
+    diag(CAlloc->getBeginLoc(), "malloc, calloc, realloc, aligned_alloc, and free shall not be used");
+    return;
+  }
+
+  if (const auto *StdAlloc = Result.Nodes.getNodeAs<CXXMemberCallExpr>("std-alloc")) {
+    diag(StdAlloc->getBeginLoc(), "std allocate or deallocate member functions shall not be used");
+    return;
+  }
+
+  if (const auto *UniqueRelease = Result.Nodes.getNodeAs<CXXMemberCallExpr>("unique-release")) {
+    diag(UniqueRelease->getBeginLoc(), "std::unique_ptr::release shall not be used");
+    return;
+  }
 }
 
 } // namespace clang::tidy::hsc
