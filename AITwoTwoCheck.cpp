@@ -14,19 +14,29 @@ using namespace clang::ast_matchers;
 namespace clang::tidy::hsc {
 
 void AITwoTwoCheck::registerMatchers(MatchFinder *Finder) {
-  // FIXME: Add matchers.
-  Finder->addMatcher(functionDecl().bind("x"), this);
+  Finder->addMatcher(
+    cStyleCastExpr(unless(hasDestinationType(voidType()))).bind("c-cast"),
+    this);
+
+  Finder->addMatcher(
+    cxxFunctionalCastExpr().bind("func-cast"),
+    this);
 }
 
 void AITwoTwoCheck::check(const MatchFinder::MatchResult &Result) {
-  // FIXME: Add callback implementation.
-  const auto *MatchedDecl = Result.Nodes.getNodeAs<FunctionDecl>("x");
-  if (!MatchedDecl->getIdentifier() || MatchedDecl->getName().starts_with("awesome_"))
+  if (const auto *MatchedCCast = Result.Nodes.getNodeAs<CStyleCastExpr>("c-cast")) {
+    diag(MatchedCCast->getBeginLoc(), "C-style casts shall not be used");
     return;
-  diag(MatchedDecl->getLocation(), "function %0 is insufficiently awesome")
-      << MatchedDecl
-      << FixItHint::CreateInsertion(MatchedDecl->getLocation(), "awesome_");
-  diag(MatchedDecl->getLocation(), "insert 'awesome'", DiagnosticIDs::Note);
-}
+  }
 
+  if (const auto *MatchedFuncCast = Result.Nodes.getNodeAs<CXXFunctionalCastExpr>("func-cast")) {
+    if (MatchedFuncCast->getCastKind() == CK_ConstructorConversion)
+        return;
+    if (MatchedFuncCast->isListInitialization())
+        return;
+
+    diag(MatchedFuncCast->getBeginLoc(), "Functional notation casts shall not be used");
+    return;
+  }
+}
 } // namespace clang::tidy::hsc
