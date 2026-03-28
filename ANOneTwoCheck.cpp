@@ -7,26 +7,41 @@
 //===----------------------------------------------------------------------===//
 
 #include "ANOneTwoCheck.h"
+#include "clang/AST/ASTContext.h"
+#include "clang/AST/CXXInheritance.h"
 #include "clang/ASTMatchers/ASTMatchFinder.h"
-
+#include "llvm/ADT/SmallPtrSet.h"
 using namespace clang::ast_matchers;
-
 namespace clang::tidy::hsc {
-
 void ANOneTwoCheck::registerMatchers(MatchFinder *Finder) {
-  // FIXME: Add matchers.
-  Finder->addMatcher(functionDecl().bind("x"), this);
+ Finder->addMatcher(
+     cxxRecordDecl(isDefinition(), hasAnyBase(cxxBaseSpecifier())).bind("class"),
+     this);
 }
-
 void ANOneTwoCheck::check(const MatchFinder::MatchResult &Result) {
-  // FIXME: Add callback implementation.
-  const auto *MatchedDecl = Result.Nodes.getNodeAs<FunctionDecl>("x");
-  if (!MatchedDecl->getIdentifier() || MatchedDecl->getName().starts_with("awesome_"))
-    return;
-  diag(MatchedDecl->getLocation(), "function %0 is insufficiently awesome")
-      << MatchedDecl
-      << FixItHint::CreateInsertion(MatchedDecl->getLocation(), "awesome_");
-  diag(MatchedDecl->getLocation(), "insert 'awesome'", DiagnosticIDs::Note);
+ const auto *MatchedDecl = Result.Nodes.getNodeAs<CXXRecordDecl>("class");
+ if (!MatchedDecl || !MatchedDecl->hasDefinition() || MatchedDecl->getNumVBases() == 0)
+   return;
+ llvm::SmallPtrSet<const CXXRecordDecl *, 4> VirtualBases;
+ for (const auto &VBase : MatchedDecl->vbases()) {
+   if (const auto *BaseDecl = VBase.getType()->getAsCXXRecordDecl())
+     VirtualBases.insert(BaseDecl->getCanonicalDecl());
+ }
+ CXXBasePaths Paths;
+ bool MixedInheritance = MatchedDecl->lookupInBases(
+     [&VirtualBases](const CXXBaseSpecifier *Specifier, CXXBasePath &Path) {
+       if (Specifier->isVirtual())
+         return false;
+       if (const auto *BaseDecl = Specifier->getType()->getAsCXXRecordDecl()) {
+         if (VirtualBases.count(BaseDecl->getCanonicalDecl()))
+           return true;
+       }
+       return false;
+     },
+     Paths);
+ if (MixedInheritance) {
+   diag(MatchedDecl->getLocation(), "Rule HSCAN.1.2: An accessible base class shall not be both virtual and non-virtual in the same hierarchy");
+ }
 }
-
 } // namespace clang::tidy::hsc
+
