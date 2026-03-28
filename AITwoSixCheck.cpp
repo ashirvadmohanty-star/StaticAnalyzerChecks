@@ -14,19 +14,27 @@ using namespace clang::ast_matchers;
 namespace clang::tidy::hsc {
 
 void AITwoSixCheck::registerMatchers(MatchFinder *Finder) {
-  // FIXME: Add matchers.
-  Finder->addMatcher(functionDecl().bind("x"), this);
+  Finder->addMatcher(explicitCastExpr().bind("cast"), this);
 }
 
 void AITwoSixCheck::check(const MatchFinder::MatchResult &Result) {
-  // FIXME: Add callback implementation.
-  const auto *MatchedDecl = Result.Nodes.getNodeAs<FunctionDecl>("x");
-  if (!MatchedDecl->getIdentifier() || MatchedDecl->getName().starts_with("awesome_"))
-    return;
-  diag(MatchedDecl->getLocation(), "function %0 is insufficiently awesome")
-      << MatchedDecl
-      << FixItHint::CreateInsertion(MatchedDecl->getLocation(), "awesome_");
-  diag(MatchedDecl->getLocation(), "insert 'awesome'", DiagnosticIDs::Note);
+  const auto *Cast = Result.Nodes.getNodeAs<ExplicitCastExpr>("cast");
+  if (!Cast)
+      return;
+
+  if (isa<CXXConstCastExpr>(Cast))
+      return;
+
+  QualType DestType = Cast->getTypeAsWritten();
+  QualType SrcType = Cast->getSubExpr()->getType();
+
+  if (!DestType->isPointerType())
+      return;
+
+  if (SrcType->isIntegerType() || SrcType->isEnumeralType() || SrcType->isVoidPointerType()) {
+    diag(Cast->getBeginLoc(), 
+            "An object with integral, enumerated, or pointer to void type shall not be cast to a pointer type");
+  }
 }
 
 } // namespace clang::tidy::hsc
