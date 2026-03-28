@@ -14,19 +14,20 @@ using namespace clang::ast_matchers;
 namespace clang::tidy::hsc {
 
 void AREightOneCheck::registerMatchers(MatchFinder *Finder) {
-  // FIXME: Add matchers.
-  Finder->addMatcher(functionDecl().bind("x"), this);
+  Finder->addMatcher(
+          functionDecl(
+            isExplicitTemplateSpecialization()
+          ).bind("spec"), 
+          this);
 }
 
 void AREightOneCheck::check(const MatchFinder::MatchResult &Result) {
-  // FIXME: Add callback implementation.
-  const auto *MatchedDecl = Result.Nodes.getNodeAs<FunctionDecl>("x");
-  if (!MatchedDecl->getIdentifier() || MatchedDecl->getName().starts_with("awesome_"))
-    return;
-  diag(MatchedDecl->getLocation(), "function %0 is insufficiently awesome")
-      << MatchedDecl
-      << FixItHint::CreateInsertion(MatchedDecl->getLocation(), "awesome_");
-  diag(MatchedDecl->getLocation(), "insert 'awesome'", DiagnosticIDs::Note);
+  const auto *MatchedDecl = Result.Nodes.getNodeAs<FunctionDecl>("spec");
+
+  if (!MatchedDecl)
+      return;
+
+  diag(MatchedDecl->getBeginLoc(), "Function templates shall not be explicitly specialized");
 }
 
 } // namespace clang::tidy::hsc
