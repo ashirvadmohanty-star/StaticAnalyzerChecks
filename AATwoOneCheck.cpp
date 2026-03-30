@@ -15,18 +15,32 @@ namespace clang::tidy::hsc {
 
 void AATwoOneCheck::registerMatchers(MatchFinder *Finder) {
   // FIXME: Add matchers.
-  Finder->addMatcher(functionDecl().bind("x"), this);
+  Finder->addMatcher( varDecl(
+        hasLocalStorage(),        // local variables
+        unless(isExpansionInSystemHeader())
+    ).bind("var"), this);
 }
 
 void AATwoOneCheck::check(const MatchFinder::MatchResult &Result) {
   // FIXME: Add callback implementation.
-  const auto *MatchedDecl = Result.Nodes.getNodeAs<FunctionDecl>("x");
-  if (!MatchedDecl->getIdentifier() || MatchedDecl->getName().starts_with("awesome_"))
+  const auto *VD = Result.Nodes.getNodeAs<VarDecl>("var");
+  if (!VD)
     return;
-  diag(MatchedDecl->getLocation(), "function %0 is insufficiently awesome")
-      << MatchedDecl
-      << FixItHint::CreateInsertion(MatchedDecl->getLocation(), "awesome_");
-  diag(MatchedDecl->getLocation(), "insert 'awesome'", DiagnosticIDs::Note);
+
+  // Skip implicit/generated variables
+  if (VD->isImplicit())
+    return;
+
+  // Skip parameters (optional)
+  if (isa<ParmVarDecl>(VD))
+    return;
+
+  // Check if unused
+  if (!VD->isUsed()) {
+    diag(VD->getLocation(),
+         "variable '%0' with limited visibility is not used")
+        << VD->getName();
+  }
 }
 
 } // namespace clang::tidy::hsc
