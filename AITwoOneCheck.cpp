@@ -15,18 +15,62 @@ namespace clang::tidy::hsc {
 
 void AITwoOneCheck::registerMatchers(MatchFinder *Finder) {
   // FIXME: Add matchers.
-  Finder->addMatcher(functionDecl().bind("x"), this);
+  
+  // Match reinterpret_cast or static_cast expressions
+  Finder->addMatcher(explicitCastExpr(unless(cxxDynamicCastExpr()),hasSourceExpression(expr().bind("srcExpr"))).bind("badCast"),this);
+
 }
 
 void AITwoOneCheck::check(const MatchFinder::MatchResult &Result) {
   // FIXME: Add callback implementation.
-  const auto *MatchedDecl = Result.Nodes.getNodeAs<FunctionDecl>("x");
-  if (!MatchedDecl->getIdentifier() || MatchedDecl->getName().starts_with("awesome_"))
-    return;
-  diag(MatchedDecl->getLocation(), "function %0 is insufficiently awesome")
-      << MatchedDecl
-      << FixItHint::CreateInsertion(MatchedDecl->getLocation(), "awesome_");
-  diag(MatchedDecl->getLocation(), "insert 'awesome'", DiagnosticIDs::Note);
+
+	const auto *Cast =
+    	Result.Nodes.getNodeAs<ExplicitCastExpr>("badCast");
+	const auto *SrcExpr =
+    	Result.Nodes.getNodeAs<Expr>("srcExpr");
+
+	if (!Cast || !SrcExpr)
+    	return;
+
+	const QualType SrcType = SrcExpr->getType();
+	const QualType DestType = Cast->getTypeAsWritten();
+
+	const CXXRecordDecl *SrcRecord =
+      SrcType->getPointeeCXXRecordDecl();
+	const CXXRecordDecl *DestRecord =
+      DestType->getPointeeCXXRecordDecl();
+
+	if (!SrcRecord || !DestRecord)
+    	return;
+
+  // Must be polymorphic base
+	if (!SrcRecord->isPolymorphic())
+    	return;
+
+  // Must actually be a base → derived relationship
+	if (!DestRecord->isDerivedFrom(SrcRecord))
+    	return;
+
+  // Check for virtual inheritance
+	bool HasVirtualBase = false;
+  	for (const auto &Base : DestRecord->bases()) {
+    	if (Base.isVirtual() &&
+        	Base.getType()->getAsCXXRecordDecl() == SrcRecord) {
+      		HasVirtualBase = true;
+      		break;
+    	}
+  	}
+
+	if (!HasVirtualBase)
+    	return;
+
+  // Reject everything except dynamic_cast
+	diag(Cast->getBeginLoc(),
+       "casting from a virtual base class to a derived class shall be done "
+       "only using dynamic_cast")
+      << Cast->getSourceRange();
 }
+
+
 
 } // namespace clang::tidy::hsc
