@@ -15,18 +15,36 @@ namespace clang::tidy::hsc {
 
 void AATwoFourCheck::registerMatchers(MatchFinder *Finder) {
   // FIXME: Add matchers.
-  Finder->addMatcher(functionDecl().bind("x"), this);
+  Finder->addMatcher(
+      functionDecl(
+          isDefinition(),
+          unless(isMain()),
+          anyOf(
+              isStaticStorageClass(),
+              hasDeclContext(namespaceDecl(isAnonymous()))
+          )
+      ).bind("func"),
+      this);
 }
 
 void AATwoFourCheck::check(const MatchFinder::MatchResult &Result) {
   // FIXME: Add callback implementation.
-  const auto *MatchedDecl = Result.Nodes.getNodeAs<FunctionDecl>("x");
-  if (!MatchedDecl->getIdentifier() || MatchedDecl->getName().starts_with("awesome_"))
+  const auto *Func = Result.Nodes.getNodeAs<FunctionDecl>("func");
+  if (!Func)
     return;
-  diag(MatchedDecl->getLocation(), "function %0 is insufficiently awesome")
-      << MatchedDecl
-      << FixItHint::CreateInsertion(MatchedDecl->getLocation(), "awesome_");
-  diag(MatchedDecl->getLocation(), "insert 'awesome'", DiagnosticIDs::Note);
+
+  // Ignore compiler-generated or invalid locations
+  if (Func->isImplicit() || !Func->getLocation().isValid())
+    return;
+
+  // Check if function is referenced
+  if (Func->isUsed())
+    return;
+
+  // Report unused limited-visibility function
+  diag(Func->getLocation(),
+       "function '%0' has limited visibility but is never used")
+      << Func->getName();
 }
 
 } // namespace clang::tidy::hsc
