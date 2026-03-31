@@ -1,93 +1,88 @@
 //===----------------------------------------------------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
 #include "APOneOneCheck.h"
 #include "clang/ASTMatchers/ASTMatchFinder.h"
 #include "clang/AST/RecursiveASTVisitor.h"
-#include "clang/AST/ExprCXX.h"
-
+#include "clang/AST/Stmt.h"
 using namespace clang::ast_matchers;
 
 namespace clang::tidy::hsc {
 
-namespace {
-
-class DynamicTypeVisitor
-    : public RecursiveASTVisitor<DynamicTypeVisitor> {
-public:
-  explicit DynamicTypeVisitor(ASTContext *Context,
-                              ClangTidyCheck *Check)
-      : Context(Context), Check(Check) {}
-
-  // 🔴 Detect virtual function calls
-  bool VisitCXXMemberCallExpr(CXXMemberCallExpr *Call) {
-    const auto *Method = Call->getMethodDecl();
-    if (!Method)
-      return true;
-
-    if (Method->isVirtual()) {
-      // Optional: restrict to calls on 'this'
-      const Expr *Obj = Call->getImplicitObjectArgument();
-      if (Obj && isa<CXXThisExpr>(Obj->IgnoreImpCasts())) {
-        Check->diag(Call->getExprLoc(),
-                    "virtual function call in constructor/destructor "
-                    "uses dynamic type");
-      }
-    }
-    return true;
-  }
-
-  // Detect dynamic_cast
-  bool VisitCXXDynamicCastExpr(CXXDynamicCastExpr *Expr) {
-    Check->diag(Expr->getExprLoc(),
-                "dynamic_cast used in constructor/destructor "
-                "uses dynamic type");
-    return true;
-  }
-
-  //  Detect typeid(expr)
-  bool VisitCXXTypeidExpr(CXXTypeidExpr *Expr) {
-    if (!Expr->isTypeOperand()) { // typeid(expr), not typeid(type)
-      Check->diag(Expr->getExprLoc(),
-                  "typeid used on object in constructor/destructor "
-                  "uses dynamic type");
-    }
-    return true;
-  }
-
-private:
-  ASTContext *Context;
-  ClangTidyCheck *Check;
-};
-
-} // namespace
-
-// Register matchers
 void APOneOneCheck::registerMatchers(MatchFinder *Finder) {
+  // FIXME: Add matchers.
+  
+   // --- Virtual calls inside constructor ---
   Finder->addMatcher(
-      cxxConstructorDecl(isDefinition()).bind("ctor"),
+      cxxConstructorDecl(
+          isDefinition(),
+          hasDescendant(
+              cxxMemberCallExpr(
+                  callee(cxxMethodDecl(isVirtual()))
+              ).bind("virtualCall")
+          )
+      ),
       this);
 
+  // --- Virtual calls inside destructor ---
   Finder->addMatcher(
-      cxxDestructorDecl(isDefinition()).bind("dtor"),
+      cxxDestructorDecl(
+          isDefinition(),
+          hasDescendant(
+              cxxMemberCallExpr(
+                  callee(cxxMethodDecl(isVirtual()))
+              ).bind("virtualCall")
+          )
+      ),
+      this);
+
+  // --- dynamic_cast inside constructor ---
+  Finder->addMatcher(
+      cxxDynamicCastExpr(
+          hasAncestor(cxxConstructorDecl())
+      ).bind("dynCast"),
+      this);
+
+  // --- dynamic_cast inside destructor ---
+  Finder->addMatcher(
+      cxxDynamicCastExpr(
+          hasAncestor(cxxDestructorDecl())
+      ).bind("dynCast"),
       this);
 }
 
-//  Main check
 void APOneOneCheck::check(const MatchFinder::MatchResult &Result) {
-  const auto *Ctor = Result.Nodes.getNodeAs<CXXConstructorDecl>("ctor");
-  const auto *Dtor = Result.Nodes.getNodeAs<CXXDestructorDecl>("dtor");
+if (const auto *Call =
+          Result.Nodes.getNodeAs<CXXMemberCallExpr>("virtualCall")) {
 
-  const CXXMethodDecl *Method = Ctor ? Ctor : Dtor;
-  if (!Method || !Method->hasBody())
-    return;
+    if (const auto *Method = Call->getMethodDecl()) {
+      if (Method->isVirtual()) {
+        diag(Call->getExprLoc(),
+             "virtual function call inside constructor/destructor "
+             "uses incomplete dynamic type");
+      }
+    }
+  }
 
-  // Traverse body
-  DynamicTypeVisitor Visitor(Result.Context, this);
-  Visitor.TraverseStmt(Method->getBody());
+  if (const auto *Dyn =
+          Result.Nodes.getNodeAs<CXXDynamicCastExpr>("dynCast")) {
+
+    diag(Dyn->getExprLoc(),
+         "dynamic_cast used inside constructor/destructor");
+  }
+
+  //  Handle typeid safely here
+  if (const auto *Stmt = Result.Nodes.getNodeAs<IfStmt>("stmt")) {
+    if (const auto *TypeId = llvm::dyn_cast<CXXTypeidExpr>(Stmt)) {
+      diag(TypeId->getExprLoc(),
+           "typeid used inside constructor/destructor");
+    }
+  }
 }
 
 } // namespace clang::tidy::hsc
