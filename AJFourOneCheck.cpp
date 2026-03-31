@@ -15,18 +15,36 @@ namespace clang::tidy::hsc {
 
 void AJFourOneCheck::registerMatchers(MatchFinder *Finder) {
   // FIXME: Add matchers.
-  Finder->addMatcher(functionDecl().bind("x"), this);
+  Finder->addMatcher(ifStmt().bind("ifStmt"), this);
 }
 
 void AJFourOneCheck::check(const MatchFinder::MatchResult &Result) {
   // FIXME: Add callback implementation.
-  const auto *MatchedDecl = Result.Nodes.getNodeAs<FunctionDecl>("x");
-  if (!MatchedDecl->getIdentifier() || MatchedDecl->getName().starts_with("awesome_"))
+    const auto *If = Result.Nodes.getNodeAs<IfStmt>("ifStmt");
+  if (!If)
     return;
-  diag(MatchedDecl->getLocation(), "function %0 is insufficiently awesome")
-      << MatchedDecl
-      << FixItHint::CreateInsertion(MatchedDecl->getLocation(), "awesome_");
-  diag(MatchedDecl->getLocation(), "insert 'awesome'", DiagnosticIDs::Note);
+
+  // Walk to the last else-if in the chain
+  const IfStmt *Current = If;
+
+  while (true) {
+    const Stmt *Else = Current->getElse();
+
+    // No else → violation
+    if (!Else) {
+      diag(Current->getIfLoc(),
+           "if-else-if chain should be terminated with a final else statement");
+      return;
+    }
+
+    // If else is another if → it's an else-if, keep walking
+    if (const auto *ElseIf = dyn_cast<IfStmt>(Else)) {
+      Current = ElseIf;
+    } else {
+      // Found final else → valid
+      return;
+    }
+  }
 }
 
 } // namespace clang::tidy::hsc
