@@ -7,6 +7,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "AATwoOneCheck.h"
+#include "clang/AST/Decl.h"
+#include "clang/AST/Type.h"
 #include "clang/ASTMatchers/ASTMatchFinder.h"
 
 using namespace clang::ast_matchers;
@@ -14,33 +16,17 @@ using namespace clang::ast_matchers;
 namespace clang::tidy::hsc {
 
 void AATwoOneCheck::registerMatchers(MatchFinder *Finder) {
-  // FIXME: Add matchers.
-  Finder->addMatcher( varDecl(
-        hasLocalStorage(),        // local variables
-        unless(isExpansionInSystemHeader())
-    ).bind("var"), this);
+  Finder->addMatcher(
+      varDecl(
+          hasLocalStorage(),
+          unless(isExpansionInSystemHeader())
+      ).bind("var"),
+      this);
 }
 
 void AATwoOneCheck::check(const MatchFinder::MatchResult &Result) {
-  // FIXME: Add callback implementation.
   const auto *VD = Result.Nodes.getNodeAs<VarDecl>("var");
   if (!VD)
     return;
-
-  // Skip implicit/generated variables
-  if (VD->isImplicit())
-    return;
-
-  // Skip parameters (optional)
-  if (isa<ParmVarDecl>(VD))
-    return;
-
-  // Check if unused
-  if (!VD->isUsed()) {
-    diag(VD->getLocation(),
-         "variable '%0' with limited visibility is not used")
-        << VD->getName();
-  }
 }
-
-} // namespace clang::tidy::hsc
+}
