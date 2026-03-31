@@ -28,5 +28,37 @@ void AATwoOneCheck::check(const MatchFinder::MatchResult &Result) {
   const auto *VD = Result.Nodes.getNodeAs<VarDecl>("var");
   if (!VD)
     return;
+
+  // Skip unnamed variables
+  if (!VD->getIdentifier())
+    return;
+
+  // Skip variables explicitly marked maybe_unused
+  if (VD->hasAttr<clang::UnusedAttr>())
+    return;
+
+  // If variable is used, it's fine
+  if (VD->isUsed())
+    return;
+
+  // Check for RAII-style usage (non-trivial ctor/dtor)
+  const QualType QT = VD->getType();
+  if (const auto *RT = QT->getAsCXXRecordDecl()) {
+    if (RT->hasNonTrivialDestructor()) {
+      // Considered "used" due to side effects
+      return;
+    }
+  }
+
+  // Report diagnostic
+  diag(VD->getLocation(),
+       "variable '%0' with limited visibility is never used")
+      << VD->getName();
+
+  // Optional fix-it: suggest [[maybe_unused]]
+  diag(VD->getLocation(),
+       "consider marking it as [[maybe_unused]] if intentional",
+       DiagnosticIDs::Note);
 }
-}
+
+} // namespace clang::tidy::hsc
