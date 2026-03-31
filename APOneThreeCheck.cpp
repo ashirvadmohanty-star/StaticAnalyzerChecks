@@ -15,18 +15,47 @@ namespace clang::tidy::hsc {
 
 void APOneThreeCheck::registerMatchers(MatchFinder *Finder) {
   // FIXME: Add matchers.
-  Finder->addMatcher(functionDecl().bind("x"), this);
+  // Match constructors callable with a single argument and not explicit
+  Finder->addMatcher(
+      cxxConstructorDecl(
+          unless(isExplicit()),
+          unless(isDeleted()),
+          ofClass(recordDecl().bind("class")),
+          anyOf(
+              parameterCountIs(1),
+              allOf(
+                  parameterCountIs(2),
+                  hasParameter(1, parmVarDecl(hasDefaultArgument()))
+              )
+          )
+      ).bind("ctor"),
+      this);
+
+  // Match conversion operators that are not explicit
+  Finder->addMatcher(
+      cxxConversionDecl(
+          unless(isExplicit()),
+          unless(isDeleted())
+      ).bind("conv"),
+      this);
+  
 }
 
 void APOneThreeCheck::check(const MatchFinder::MatchResult &Result) {
   // FIXME: Add callback implementation.
-  const auto *MatchedDecl = Result.Nodes.getNodeAs<FunctionDecl>("x");
-  if (!MatchedDecl->getIdentifier() || MatchedDecl->getName().starts_with("awesome_"))
-    return;
-  diag(MatchedDecl->getLocation(), "function %0 is insufficiently awesome")
-      << MatchedDecl
-      << FixItHint::CreateInsertion(MatchedDecl->getLocation(), "awesome_");
-  diag(MatchedDecl->getLocation(), "insert 'awesome'", DiagnosticIDs::Note);
+  //Constructor case
+  if (const auto *Ctor = Result.Nodes.getNodeAs<CXXConstructorDecl>("ctor")) {
+    diag(Ctor->getLocation(),
+         "single-argument constructor should be marked explicit")
+        << FixItHint::CreateInsertion(Ctor->getLocation(), "explicit ");
+  }
+
+  // Conversion operator case
+  if (const auto *Conv = Result.Nodes.getNodeAs<CXXConversionDecl>("conv")) {
+    diag(Conv->getLocation(),
+         "conversion operator should be marked explicit")
+        << FixItHint::CreateInsertion(Conv->getLocation(), "explicit ");
+  }
 }
 
 } // namespace clang::tidy::hsc
