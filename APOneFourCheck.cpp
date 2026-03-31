@@ -15,18 +15,49 @@ namespace clang::tidy::hsc {
 
 void APOneFourCheck::registerMatchers(MatchFinder *Finder) {
   // FIXME: Add matchers.
-  Finder->addMatcher(functionDecl().bind("x"), this);
+  Finder->addMatcher(
+      cxxConstructorDecl(
+          isDefinition(),
+          unless(isImplicit())
+      ).bind("ctor"),
+      this);
 }
 
 void APOneFourCheck::check(const MatchFinder::MatchResult &Result) {
   // FIXME: Add callback implementation.
-  const auto *MatchedDecl = Result.Nodes.getNodeAs<FunctionDecl>("x");
-  if (!MatchedDecl->getIdentifier() || MatchedDecl->getName().starts_with("awesome_"))
+  const auto *Ctor = Result.Nodes.getNodeAs<CXXConstructorDecl>("ctor");
+  if (!Ctor)
     return;
-  diag(MatchedDecl->getLocation(), "function %0 is insufficiently awesome")
-      << MatchedDecl
-      << FixItHint::CreateInsertion(MatchedDecl->getLocation(), "awesome_");
-  diag(MatchedDecl->getLocation(), "insert 'awesome'", DiagnosticIDs::Note);
+
+  const auto *Parent = Ctor->getParent();
+  if (!Parent)
+    return;
+
+  // Track initialized fields
+  llvm::SmallPtrSet<const FieldDecl *, 8> InitializedFields;
+
+  for (const auto *Init : Ctor->inits()) {
+    if (const auto *Field = Init->getMember()) {
+      InitializedFields.insert(Field);
+    }
+  }
+
+  for (const auto *Field : Parent->fields()) {
+
+
+    // Already initialized in-class
+    if (Field->hasInClassInitializer())
+      continue;
+
+    // Initialized in constructor
+    if (InitializedFields.count(Field))
+      continue;
+
+    // Violation
+    diag(Field->getLocation(),
+         "data member '%0' is not initialized in constructor")
+        << Field->getName();
+  }
 }
 
 } // namespace clang::tidy::hsc
